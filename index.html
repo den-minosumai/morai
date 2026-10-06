@@ -62,7 +62,7 @@ code.k{display:block;word-break:break-all;background:#f1efe8;padding:8px;border-
 <div id="toast"></div>
 <script>
 "use strict";
-const APPV="1.2";
+const APPV="1.3";
 const $=s=>document.querySelector(s);
 const app=$("#app"), titleEl=$("#title"), backBtn=$("#back");
 const LS={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -121,10 +121,11 @@ async function scrHome(){
 
 /* ===== 物件 ===== */
 function scrPlace(){
-  const places=LS.get("places",[]);
+  let places=LS.get("places",[]);
   const c=el("div","card");
   c.appendChild(lbl("物件を選択"));
-  const sel=el("select");sel.innerHTML=`<option value="">— 選択 —</option>`+places.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join("");c.appendChild(sel);
+  const sel=el("select");const fill=()=>{const v=sel.value;sel.innerHTML=`<option value="">— 選択 —</option>`+places.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join("");sel.value=v;};fill();c.appendChild(sel);
+  autoPull(true).then(()=>{const nw=LS.get("places",[]);if(sel.isConnected&&nw.length!==places.length){places=nw;fill();}});
   c.appendChild(lbl("または新しい物件を入力"));
   const nm=el("input");nm.type="text";nm.placeholder="例：うだつ近く A邸";c.appendChild(nm);
   app.appendChild(c);
@@ -139,10 +140,11 @@ function scrPlace(){
 
 /* ===== 所有者 ===== */
 function scrOwner(){
-  const owners=LS.get("owners",[]);
+  let owners=LS.get("owners",[]);
   const c=el("div","card");
   c.appendChild(lbl("所有者を選択（任意）"));
-  const sel=el("select");sel.innerHTML=`<option value="">— 選択 —</option>`+owners.map((o,i)=>`<option value="${i}">${esc(o.name)}</option>`).join("");c.appendChild(sel);
+  const sel=el("select");const fill=()=>{const v=sel.value;sel.innerHTML=`<option value="">— 選択 —</option>`+owners.map((o,i)=>`<option value="${i}">${esc(o.name)}</option>`).join("");sel.value=v;};fill();c.appendChild(sel);
+  autoPull(true).then(()=>{const nw=LS.get("owners",[]);if(sel.isConnected&&nw.length!==owners.length){owners=nw;fill();}});
   c.appendChild(lbl("または新しい所有者（氏名のみ・任意）"));
   const nm=el("input");nm.type="text";nm.placeholder="氏名";c.appendChild(nm);
   const tel=el("input");tel.type="tel";tel.placeholder="連絡先（任意）";tel.style.marginTop="8px";c.appendChild(tel);
@@ -388,8 +390,15 @@ async function syncPending(opt){
   refreshIfIdle();
 }
 async function pullMasters(loud){
-  try{const j=await postGAS({action:"masters"});const n=mergeMasters(j.masters||{});if(loud)toast(`取り込み：物件 ${n.p}件・所有者 ${n.o}件 追加`);}
-  catch(e){if(loud)toast(e.msg||String(e),6000);}
+  try{const j=await postGAS({action:"masters"});const n=mergeMasters(j.masters||{});if(loud)toast(`取り込み：物件 ${n.p}件・所有者 ${n.o}件 追加`);return n;}
+  catch(e){if(loud)toast(e.msg||String(e),6000);return null;}
+}
+// 他の端末で登録した物件・所有者を自動で取り込む（起動時・画面復帰時・物件/所有者の選択画面）
+let lastPull=0,pullP=null;
+function autoPull(force){
+  if(!LS.get("gasUrl","")||!navigator.onLine)return Promise.resolve(null);
+  if(pullP&&Date.now()-lastPull<(force?2000:15000))return pullP;
+  lastPull=Date.now();pullP=pullMasters(false);return pullP;
 }
 function mergeMasters(m){
   const places=LS.get("places",[]);const pn=new Set(places.map(x=>x.name));let np=0,no=0;
@@ -432,7 +441,7 @@ function stamp(){const d=new Date();return ""+d.getFullYear()+two(d.getMonth()+1
 /* ===== 起動 ===== */
 window.addEventListener("online",()=>{setNet();syncPending({silent:true});});
 window.addEventListener("offline",setNet);
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&navigator.onLine)syncPending({silent:true});});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&navigator.onLine){syncPending({silent:true});autoPull();}});
 openDB().then(()=>{
   try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
   let setupCode="";
@@ -440,7 +449,7 @@ openDB().then(()=>{
   device();
   if(setupCode&&isStandalone()){history.replaceState(null,"",location.pathname);toast("設定を適用しました");goRoot("home","もらいうけ帳");}
   else if(setupCode){nav=[{screen:"setup",title:"端末の設定",code:setupCode}];render();}
-  else goRoot("home","もらいうけ帳");setTimeout(()=>syncPending({silent:true}),800);
+  else goRoot("home","もらいうけ帳");setTimeout(()=>{syncPending({silent:true});autoPull();},800);
   if(location.protocol.startsWith("http")&&"serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{});}
 }).catch(()=>{app.innerHTML='<div class="card"><b style="color:#a32d2d">保存領域を開けませんでした。</b><p class="muted">Safariのプライベートブラウズを解除するか、別のブラウザでお試しください。</p></div>';});
 </script>
