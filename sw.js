@@ -1,5 +1,5 @@
 // もらいうけ帳 オフライン用 Service Worker（アプリ本体を端末に保存し、電波がなくても起動できるようにする）
-const CACHE = "morai-v1.1";
+const CACHE = "morai-v1.2";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

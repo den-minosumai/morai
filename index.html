@@ -62,7 +62,7 @@ code.k{display:block;word-break:break-all;background:#f1efe8;padding:8px;border-
 <div id="toast"></div>
 <script>
 "use strict";
-const APPV="1.1";
+const APPV="1.2";
 const $=s=>document.querySelector(s);
 const app=$("#app"), titleEl=$("#title"), backBtn=$("#back");
 const LS={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -90,7 +90,7 @@ backBtn.onclick=()=>{if(nav.length>1){nav.pop();render();}};
 async function render(){
   const c=cur();titleEl.textContent=c.title||"もらいうけ帳";backBtn.classList.toggle("hidden",nav.length<=1);setNet();
   app.innerHTML="";
-  const f={home:scrHome,place:scrPlace,owner:scrOwner,lots:scrLots,lot:scrLot,sign:scrSign,list:scrList,detail:scrDetail,settings:scrSettings}[c.screen];
+  const f={setup:scrSetup,home:scrHome,place:scrPlace,owner:scrOwner,lots:scrLots,lot:scrLot,sign:scrSign,list:scrList,detail:scrDetail,settings:scrSettings}[c.screen];
   if(f)await f();
   window.scrollTo(0,0);
 }
@@ -104,10 +104,11 @@ async function scrHome(){
   const gas=LS.get("gasUrl","");
   const d=device();
   const st=el("div","status");
-  if(!gas){st.className="status warn";st.innerHTML="Google連携が未設定です（受付・保存はできます）。<br>「設定」でURLとシークレットを入れてください。";}
+  if(!gas){st.className="status warn";st.innerHTML="Google連携が未設定です（受付・保存はできます）。<br>設定用QRで表示された「設定コード」をコピーして、下のボタンを押してください。";}
   else if(pend.length===0){st.className="status ok";st.innerHTML="✓ すべてGoogleに送信済み"+(LS.get("lastSync",0)?`（最終 ${fmt(LS.get("lastSync",0))}）`:"");}
   else{const errS=pend.find(s=>s.syncError);const old=pend.some(s=>Date.now()-s.ts>3*864e5);st.className="status "+(errS||old?"err":"warn");st.innerHTML=`未送信 ${pend.length}件`+(errS?`<br>理由：${esc(errS.syncError)}`:"")+(old?"<br>3日以上たった未送信があります。早めに送信を。":"");}
   app.appendChild(st);
+  if(!gas)app.appendChild(btn("設定コードを貼り付けて連携する",()=>pasteAndApply(),"sec"));
   const c=el("div","card");
   c.innerHTML=`<h2>現場受付</h2><p class="muted" style="margin:0">物件ごとに、譲り受ける物をロット単位で登録し、ご本人の同意（タップ）で受付完了。電波がなくても保存でき、つながると自動でGoogleへ送ります。</p><p class="muted" style="margin:8px 0 0">この端末：<b>${esc(d.name)}</b></p>`;
   app.appendChild(c);
@@ -309,10 +310,29 @@ function scrSettings(){
   const codeBox=el("div");k.appendChild(btn("この端末の設定コードを表示・共有",async()=>{save();const code=makeCode();codeBox.innerHTML=`<code class="k">${esc(code)}</code>`;try{if(navigator.share){await navigator.share({title:"もらいうけ帳 設定コード",text:code});}else{await navigator.clipboard.writeText(code);toast("コピーしました");}}catch(e){}},"sec sm"));
   k.appendChild(codeBox);
   k.appendChild(lbl("設定コードを貼り付け（新しい端末側）"));const ci=el("textarea");ci.placeholder="MRU1:…";k.appendChild(ci);
-  k.appendChild(btn("設定コードを適用",()=>{try{applyCode(ci.value);toast("設定を適用しました");render();}catch(e){alert("コードが読み取れませんでした。全体をコピーして貼り付けてください。");}},"sm"));
+  k.appendChild(btn("クリップボードから貼り付けて適用",()=>pasteAndApply(),"sm"));
+  k.appendChild(btn("上の欄のコードを適用",()=>{try{applyCode(ci.value);toast("設定を適用しました");render();}catch(e){alert("コードが読み取れませんでした。全体をコピーして貼り付けてください。");}},"sec sm"));
   app.appendChild(k);
   app.appendChild(btn("保存して戻る",()=>{save();toast("保存しました");nav.pop();render();}));
   app.appendChild(p("もらいうけ帳 v"+APPV+" ／ 端末ID "+d.id,"muted"));
+}
+async function pasteAndApply(){
+  let t="";
+  try{t=await navigator.clipboard.readText();}catch(e){}
+  if(!t||!/MRU1:/.test(t)){t=prompt("設定コード（MRU1:…）を貼り付けてください")||"";}
+  const m=/MRU1:[A-Za-z0-9+/=%]+/.exec(t);
+  if(!m){if(t)alert("設定コードが見つかりませんでした。");return;}
+  try{applyCode(decodeURIComponent(m[0]));toast("設定を適用しました。接続を確認します…");goRoot("home","もらいうけ帳");const out=el("div");await testConn(out);toast(out.textContent,6000);refreshIfIdle();}
+  catch(e){alert("設定コードが読み取れませんでした。");}
+}
+function isStandalone(){return !!(window.navigator.standalone||(window.matchMedia&&matchMedia("(display-mode: standalone)").matches));}
+function scrSetup(){
+  const code=cur().code;
+  const c=el("div","card");
+  c.innerHTML=`<h2>この端末を設定します</h2><p>このブラウザには設定を適用しました。</p><p><b>ホーム画面のアプリで使う場合</b>（おすすめ）：</p><ol style="padding-left:20px;margin:0"><li>下の「設定コードをコピー」を押す</li><li>共有ボタン →「ホーム画面に追加」</li><li>ホーム画面のアイコンから開き、「設定コードを貼り付けて連携する」を押す</li></ol>`;
+  app.appendChild(c);
+  app.appendChild(btn("設定コードをコピー",async()=>{try{await navigator.clipboard.writeText(code);toast("コピーしました。ホーム画面のアプリで貼り付けてください");}catch(e){prompt("このコードを長押しでコピーしてください",code);}}));
+  app.appendChild(btn("このブラウザでこのまま使う",()=>{history.replaceState(null,"",location.pathname);goRoot("home","もらいうけ帳");},"sec"));
 }
 function makeCode(){return "MRU1:"+btoa(unescape(encodeURIComponent(JSON.stringify({u:LS.get("gasUrl",""),s:LS.get("gasSecret",""),r:LS.get("receiver","下田")}))));}
 function applyCode(code){const t=code.trim().replace(/^MRU1:/,"");const o=JSON.parse(decodeURIComponent(escape(atob(t))));if(typeof o.u==="string")LS.set("gasUrl",o.u);if(typeof o.s==="string")LS.set("gasSecret",o.s);if(o.r)LS.set("receiver",o.r);}
@@ -415,8 +435,12 @@ window.addEventListener("offline",setNet);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&navigator.onLine)syncPending({silent:true});});
 openDB().then(()=>{
   try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
-  if(location.hash.startsWith("#setup=")){try{applyCode(decodeURIComponent(location.hash.slice(7)));toast("設定コードを適用しました");}catch(e){}history.replaceState(null,"",location.pathname);}
-  device();goRoot("home","もらいうけ帳");setTimeout(()=>syncPending({silent:true}),800);
+  let setupCode="";
+  if(location.hash.startsWith("#setup=")){try{setupCode=decodeURIComponent(location.hash.slice(7));applyCode(setupCode);}catch(e){setupCode="";}}
+  device();
+  if(setupCode&&isStandalone()){history.replaceState(null,"",location.pathname);toast("設定を適用しました");goRoot("home","もらいうけ帳");}
+  else if(setupCode){nav=[{screen:"setup",title:"端末の設定",code:setupCode}];render();}
+  else goRoot("home","もらいうけ帳");setTimeout(()=>syncPending({silent:true}),800);
   if(location.protocol.startsWith("http")&&"serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{});}
 }).catch(()=>{app.innerHTML='<div class="card"><b style="color:#a32d2d">保存領域を開けませんでした。</b><p class="muted">Safariのプライベートブラウズを解除するか、別のブラウザでお試しください。</p></div>';});
 </script>
