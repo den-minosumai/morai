@@ -41,6 +41,9 @@ button,.btn{font-family:inherit}
 canvas#sig{width:100%;height:200px;background:#fff;border:2px dashed #bbb;border-radius:10px;touch-action:none;display:block}
 h2{font-size:16px;color:var(--g);margin:2px 0 8px}
 .hidden{display:none!important}
+.pick{display:block;width:100%;text-align:left;background:#fbfaf5;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0;font-size:17px;font-family:inherit;color:inherit}
+.pick .muted{display:block}
+input[type=search]{width:100%;font-size:17px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-family:inherit}
 .fab{position:fixed;left:0;right:0;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(rgba(246,245,241,0),var(--bg) 30%);max-width:640px;margin:0 auto;z-index:4}
 .chk{display:flex;gap:12px;align-items:flex-start;font-size:17px;margin-top:10px}
 .chk input{width:28px;height:28px;flex:0 0 auto;margin-top:1px}
@@ -62,7 +65,7 @@ code.k{display:block;word-break:break-all;background:#f1efe8;padding:8px;border-
 <div id="toast"></div>
 <script>
 "use strict";
-const APPV="1.3";
+const APPV="1.4";
 const $=s=>document.querySelector(s);
 const app=$("#app"), titleEl=$("#title"), backBtn=$("#back");
 const LS={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -119,26 +122,65 @@ async function scrHome(){
   app.appendChild(btn("設定",()=>go("settings","設定"),"sec"));
 }
 
-/* ===== 物件 ===== */
+/* ===== 物件（物件番号・所有者・地名を1セットで管理） ===== */
+function houseLabel(h){return [h.no,h.owner,h.area].map(x=>String(x||"").trim()).filter(Boolean).join("-")||String(h.name||"");}
+function getHouses(){return LS.get("places",[]).filter(h=>h&&h.name&&!h.hidden);}
+function touchHouse(h){const all=LS.get("places",[]);const i=all.findIndex(x=>x.name===h.name);const v=Object.assign({},i>=0?all[i]:{},h,{last:Date.now()});if(i>=0)all[i]=v;else all.push(v);LS.set("places",all);return v;}
 function scrPlace(){
-  let places=LS.get("places",[]);
+  const PAGE=8;let shown=PAGE;
   const c=el("div","card");
-  c.appendChild(lbl("物件を選択"));
-  const sel=el("select");const fill=()=>{const v=sel.value;sel.innerHTML=`<option value="">— 選択 —</option>`+places.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join("");sel.value=v;};fill();c.appendChild(sel);
-  autoPull(true).then(()=>{const nw=LS.get("places",[]);if(sel.isConnected&&nw.length!==places.length){places=nw;fill();}});
-  c.appendChild(lbl("または新しい物件を入力"));
-  const nm=el("input");nm.type="text";nm.placeholder="例：うだつ近く A邸";c.appendChild(nm);
+  c.appendChild(lbl("前に受付した物件から選ぶ"));
+  const q=el("input");q.type="search";q.placeholder="🔍 番号・所有者・地名で絞り込み";c.appendChild(q);
+  const box=el("div");box.style.marginTop="8px";c.appendChild(box);
+  const more=btn("もっと表示",()=>{shown+=PAGE;draw();},"sec sm");c.appendChild(more);
   app.appendChild(c);
-  app.appendChild(btn("この物件で進む",()=>{
-    let place=null;const v=nm.value.trim();
-    if(v){place=places.find(p=>p.name===v)||{name:v};if(!places.includes(place)){places.push(place);LS.set("places",places);}}
-    else if(sel.value!=="")place=places[+sel.value];
-    if(!place){alert("物件を選ぶか入力してください");return;}
-    draft.place={name:place.name};go("owner","所有者");
-  }));
-}
+  function draw(){
+    const k=q.value.trim().toLowerCase();
+    const list=getHouses().sort((a,b)=>(b.last||0)-(a.last||0)).filter(h=>!k||[h.name,h.no,h.owner,h.area].join(" ").toLowerCase().includes(k));
+    box.innerHTML="";
+    if(!list.length){box.appendChild(p(k?"該当なし。下の「新しい物件」から登録してください。":"まだありません。下の「新しい物件」から登録してください。","muted"));}
+    list.slice(0,shown).forEach(h=>{
+      const b=el("button","pick");b.type="button";
+      b.innerHTML=`<b>${esc(h.name)}</b>`+(h.last||h.count?`<span class="muted">${h.last?("最終 "+fmt(h.last).slice(0,10)):""}${h.count?(" ／ "+h.count+"回"):""}</span>`:"");
+      b.onclick=()=>choose(h);box.appendChild(b);
+    });
+    more.classList.toggle("hidden",list.length<=shown);
+  }
+  q.oninput=()=>{shown=PAGE;draw();};
+  draw();
+  autoPull(true).then(()=>{if(box.isConnected)draw();});
 
-/* ===== 所有者 ===== */
+  const n=el("div","card");
+  n.appendChild(el("h2")).textContent="＋ 新しい物件";
+  n.appendChild(lbl("物件番号（空き家バンク等の番号）"));
+  const no=el("input");no.type="text";no.placeholder="例：M-012";n.appendChild(no);
+  n.appendChild(lbl("所有者名"));
+  const ow=el("input");ow.type="text";ow.placeholder="例：山田";n.appendChild(ow);
+  n.appendChild(lbl("地名（町名）"));
+  const ar=el("input");ar.type="text";ar.placeholder="例：曽代";n.appendChild(ar);
+  n.appendChild(lbl("連絡先（任意）"));
+  const tel=el("input");tel.type="tel";tel.placeholder="電話など";n.appendChild(tel);
+  const pv=p("","muted");pv.style.marginTop="8px";n.appendChild(pv);
+  const upd=()=>{const L=houseLabel({no:no.value,owner:ow.value,area:ar.value});pv.textContent=L?("表示名："+L):"3つのうち分かるものだけでOK（番号があると確実）";};
+  [no,ow,ar].forEach(i=>i.oninput=upd);upd();
+  n.appendChild(btn("この物件で進む",()=>{
+    const h={no:no.value.trim(),owner:ow.value.trim(),area:ar.value.trim(),tel:tel.value.trim()};
+    h.name=houseLabel(h);
+    if(!h.name){alert("物件番号・所有者名・地名のどれかを入れてください");return;}
+    const all=LS.get("places",[]);
+    const same=all.find(x=>x.name===h.name)||(h.no&&all.find(x=>x.no&&x.no===h.no));
+    if(same&&same.name!==h.name&&!confirm(`物件番号「${h.no}」は「${same.name}」として登録済みです。\nそちらを使いますか？（キャンセル＝新しく登録）`)){}
+    else if(same){choose(Object.assign({},same,{tel:same.tel||h.tel}));return;}
+    choose(h);
+  }));
+  app.appendChild(n);
+  function choose(h){
+    const v=touchHouse(Object.assign({},h,{hidden:false}));
+    draft.place={name:v.name,no:v.no||"",owner:v.owner||"",area:v.area||""};
+    draft.owner={name:v.owner||"（未記入）",tel:v.tel||""};
+    go("lots","品物（ロット）");
+  }
+}
 function scrOwner(){
   let owners=LS.get("owners",[]);
   const c=el("div","card");
@@ -162,7 +204,7 @@ function scrOwner(){
 /* ===== ロット一覧 ===== */
 function scrLots(){
   const c=el("div","card");
-  c.innerHTML=`<div class="muted">${esc(draft.place.name)} ／ ${esc(draft.owner.name)}</div><h2>登録したロット（${draft.lots.length}）</h2>`;
+  c.innerHTML=`<div class="muted">${esc(draft.place.name)}</div><h2>登録したロット（${draft.lots.length}）</h2>`;
   if(!draft.lots.length)c.appendChild(p("「＋ロットを追加」で写真を撮って登録します。箱ごと・一式でOK。","muted"));
   draft.lots.forEach((lt,i)=>{
     const d=el("div","lot");
@@ -222,7 +264,7 @@ function scrSign(){
   const STMT="以下の物品を無償で譲り渡します。所有権は受領者（"+(draft.receiver||"")+"）へ移ります。譲り受けた品は、清掃・修理のうえ販売する場合があります。";
   draft.statement=STMT;
   const c=el("div","card");
-  c.innerHTML=`<h2>譲渡の確認</h2><p style="font-size:18px">${esc(STMT)}</p><div class="muted">${esc(draft.place.name)} ／ ${esc(draft.owner.name)}</div>`;
+  c.innerHTML=`<h2>譲渡の確認</h2><p style="font-size:18px">${esc(STMT)}</p><div class="muted">${esc(draft.place.name)}</div>`;
   const ul=el("div");ul.style.margin="8px 0";
   ul.innerHTML=draft.lots.map(l=>`・${esc(l.name)} ×${l.approx?"約":""}${esc(l.qty)}`).join("<br>");
   c.appendChild(ul);
@@ -306,7 +348,7 @@ function scrSettings(){
   const out=el("div","muted");out.style.margin="6px 0";
   g.appendChild(btn("保存して接続テスト",async()=>{save();await testConn(out);},"sm"));
   g.appendChild(out);
-  g.appendChild(btn("物件・所有者リストをGoogleから取り込む",async()=>{save();await pullMasters(false);},"sec sm"));
+  g.appendChild(btn("物件リストをGoogleから取り込む",async()=>{save();await pullMasters(false);},"sec sm"));
   app.appendChild(g);
   const k=el("div","card");k.innerHTML="<h2>端末を追加する（設定コード）</h2><p class='muted' style='margin:0'>この端末の連携設定をコードにして、新しい端末の「設定コードを貼り付け」に入れると同じ台帳に送れるようになります。端末名は端末ごとに付けてください。</p>";
   const codeBox=el("div");k.appendChild(btn("この端末の設定コードを表示・共有",async()=>{save();const code=makeCode();codeBox.innerHTML=`<code class="k">${esc(code)}</code>`;try{if(navigator.share){await navigator.share({title:"もらいうけ帳 設定コード",text:code});}else{await navigator.clipboard.writeText(code);toast("コピーしました");}}catch(e){}},"sec sm"));
@@ -390,7 +432,7 @@ async function syncPending(opt){
   refreshIfIdle();
 }
 async function pullMasters(loud){
-  try{const j=await postGAS({action:"masters"});const n=mergeMasters(j.masters||{});if(loud)toast(`取り込み：物件 ${n.p}件・所有者 ${n.o}件 追加`);return n;}
+  try{const j=await postGAS({action:"masters"});const n=mergeMasters(j.masters||{});if(loud)toast(`取り込み：物件 ${n.p}件 追加`);return n;}
   catch(e){if(loud)toast(e.msg||String(e),6000);return null;}
 }
 // 他の端末で登録した物件・所有者を自動で取り込む（起動時・画面復帰時・物件/所有者の選択画面）
@@ -401,6 +443,14 @@ function autoPull(force){
   lastPull=Date.now();pullP=pullMasters(false);return pullP;
 }
 function mergeMasters(m){
+  if(Array.isArray(m.houses)){
+    const all=LS.get("places",[]);let np=0;
+    m.houses.forEach(h=>{if(!h||!h.name)return;const i=all.findIndex(x=>x.name===h.name);
+      if(h.status==="完了"){if(i>=0)all.splice(i,1);return;}
+      const v={name:h.name,no:h.no||"",owner:h.owner||"",area:h.area||"",tel:h.tel||"",count:h.count||0,last:Math.max(h.last||0,i>=0?(all[i].last||0):0)};
+      if(i>=0)all[i]=Object.assign(all[i],v);else{all.push(v);np++;}});
+    LS.set("places",all);return{p:np,o:0};
+  }
   const places=LS.get("places",[]);const pn=new Set(places.map(x=>x.name));let np=0,no=0;
   (m.places||[]).forEach(n=>{if(n&&!pn.has(n)){places.push({name:n});pn.add(n);np++;}});LS.set("places",places);
   const owners=LS.get("owners",[]);(m.owners||[]).forEach(o=>{if(!o||!o.name)return;const ex=owners.find(x=>x.name===o.name);if(!ex){owners.push({name:o.name,tel:o.tel||""});no++;}else if(!ex.tel&&o.tel)ex.tel=o.tel;});LS.set("owners",owners);
