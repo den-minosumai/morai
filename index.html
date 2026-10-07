@@ -65,7 +65,7 @@ code.k{display:block;word-break:break-all;background:#f1efe8;padding:8px;border-
 <div id="toast"></div>
 <script>
 "use strict";
-const APPV="1.4";
+const APPV="1.5";
 const $=s=>document.querySelector(s);
 const app=$("#app"), titleEl=$("#title"), backBtn=$("#back");
 const LS={get(k,d){try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -123,14 +123,15 @@ async function scrHome(){
 }
 
 /* ===== 物件（物件番号・所有者・地名を1セットで管理） ===== */
-function houseLabel(h){return [h.no,h.owner,h.area].map(x=>String(x||"").trim()).filter(Boolean).join("-")||String(h.name||"");}
+function ownerHouse(o){o=String(o||"").trim();return !o?"":(/邸$/.test(o)?o:o+"邸");}
+function houseLabel(h){return [String(h.no||"").trim(),String(h.area||"").trim(),ownerHouse(h.owner)].filter(Boolean).join("-")||String(h.name||"");}
 function getHouses(){return LS.get("places",[]).filter(h=>h&&h.name&&!h.hidden);}
 function touchHouse(h){const all=LS.get("places",[]);const i=all.findIndex(x=>x.name===h.name);const v=Object.assign({},i>=0?all[i]:{},h,{last:Date.now()});if(i>=0)all[i]=v;else all.push(v);LS.set("places",all);return v;}
 function scrPlace(){
   const PAGE=8;let shown=PAGE;
   const c=el("div","card");
   c.appendChild(lbl("前に受付した物件から選ぶ"));
-  const q=el("input");q.type="search";q.placeholder="🔍 番号・所有者・地名で絞り込み";c.appendChild(q);
+  const q=el("input");q.type="search";q.placeholder="🔍 番号・地名・所有者で絞り込み";c.appendChild(q);
   const box=el("div");box.style.marginTop="8px";c.appendChild(box);
   const more=btn("もっと表示",()=>{shown+=PAGE;draw();},"sec sm");c.appendChild(more);
   app.appendChild(c);
@@ -152,21 +153,21 @@ function scrPlace(){
 
   const n=el("div","card");
   n.appendChild(el("h2")).textContent="＋ 新しい物件";
-  n.appendChild(lbl("物件番号（空き家バンク等の番号）"));
-  const no=el("input");no.type="text";no.placeholder="例：M-012";n.appendChild(no);
-  n.appendChild(lbl("所有者名"));
-  const ow=el("input");ow.type="text";ow.placeholder="例：山田";n.appendChild(ow);
-  n.appendChild(lbl("地名（町名）"));
+  n.appendChild(lbl("① 物件番号（空き家バンク等の番号）"));
+  const no=el("input");no.type="text";no.placeholder="例：A-012";no.autocapitalize="characters";n.appendChild(no);
+  n.appendChild(lbl("② 地名（町名）"));
   const ar=el("input");ar.type="text";ar.placeholder="例：曽代";n.appendChild(ar);
+  n.appendChild(lbl("③ 所有者名（「邸」は自動で付きます）"));
+  const ow=el("input");ow.type="text";ow.placeholder="例：山田";n.appendChild(ow);
   n.appendChild(lbl("連絡先（任意）"));
   const tel=el("input");tel.type="tel";tel.placeholder="電話など";n.appendChild(tel);
   const pv=p("","muted");pv.style.marginTop="8px";n.appendChild(pv);
   const upd=()=>{const L=houseLabel({no:no.value,owner:ow.value,area:ar.value});pv.textContent=L?("表示名："+L):"3つのうち分かるものだけでOK（番号があると確実）";};
-  [no,ow,ar].forEach(i=>i.oninput=upd);upd();
+  [no,ar,ow].forEach(i=>i.oninput=upd);upd();
   n.appendChild(btn("この物件で進む",()=>{
-    const h={no:no.value.trim(),owner:ow.value.trim(),area:ar.value.trim(),tel:tel.value.trim()};
+    const h={no:no.value.trim(),owner:ow.value.trim().replace(/邸$/,""),area:ar.value.trim(),tel:tel.value.trim()};
     h.name=houseLabel(h);
-    if(!h.name){alert("物件番号・所有者名・地名のどれかを入れてください");return;}
+    if(!h.name){alert("物件番号・地名・所有者名のどれかを入れてください");return;}
     const all=LS.get("places",[]);
     const same=all.find(x=>x.name===h.name)||(h.no&&all.find(x=>x.no&&x.no===h.no));
     if(same&&same.name!==h.name&&!confirm(`物件番号「${h.no}」は「${same.name}」として登録済みです。\nそちらを使いますか？（キャンセル＝新しく登録）`)){}
